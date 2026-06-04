@@ -1,0 +1,139 @@
+- `ctrl+shift+l` : load_all
+- `ctrl+r`       : run 1 line
+- `ctrl+enter`   : run 1 chunk
+- `ctrl+shift+i` : insert chunk
+- `f12`          : go to definition
+
+
+```{r}
+install.packages("pacman")
+options(
+  repos = c(
+    rpkgs = "https://rpkgs.r-universe.dev", # rpkgs是kongdd的R包仓库
+    CRAN = "https://mirrors.aliyun.com/CRAN/"
+  )
+)
+```
+
+```{r}
+## 比较不同 ET / 补给率 计算方法的潜力
+pacman::p_load(
+  Ipaper, hydroTools, gg.layers, rcolors, # 
+  data.table, dplyr, lubridate,
+  ggplot2, ggrepel,
+  patchwork, scales
+)
+
+devtools::load_all()
+```
+
+```{r}
+SITE <- "J1193"
+# f = sprintf("OUTPUT/%s_signal.csv", SITE)
+f = "data-raw/J1193_signal.csv"
+# J1193,116.0628,29.4667,17318
+lon = 116.0628
+lat = 29.4667
+
+d <- fread(f) %>% 
+  mutate(has_prcp = c(FALSE, diff(SM_median) > 0), .after = "SM_median")
+d$Rsi_toa <- cal_Rsi_toa(lat, yday(d$date)) %>% MJ_2W() # [MJ m-2 d-1]
+# fourier <- fread(sprintf("OUTPUT/%s_fourier.csv", SITE))
+# sm_h <- fread(sprintf("data/data_SM_hourly_%s.csv", SITE))
+```
+
+## 分析theta特征
+
+peak -> end: drydown过程
+
+```{r}
+# 0.1%
+pulse <- d[, detect_pulses(SM_median, date, threshold = 0.1, min_decrease=5)]
+
+d2 <- subset_data(d$SM_median, d$date, pulse)
+d2$Rsi_toa <- d[date %in% d2$date, Rsi_toa]
+d2[, sm_peak := max(sm), .(group)] %>% invisible()
+d2[, Rsi_toa_mean := mean(Rsi_toa), .(group)] %>% invisible()
+
+info = d2[, .SD[which.max(sm), .(date, sm_peak, Rsi_toa_mean)], .(group)]
+
+d2[, fit_nls(tau, sm)]       # 15.7%
+d2[, fit_pdv(dy, y_mean)]    # 14.4%
+d2[, fit_norm(tau, sm_norm)] # 82.6%
+
+# r = with(d2, fit_norm(tau, sm_norm))
+# ypred = d2$sm_peak * r$pred
+# yobs = d2$sm_peak * d2$sm_norm
+# GOF(yobs, ypred)
+```
+
+ypred，gof
+
+衰减曲线的方法，SM_pred的模拟效果有多好？
+
+
+```{r}
+# d2[, fit_nls(tau, sm), .(group)] # 15.7%
+# d2[, fit_pdv(dy, y_mean), .(group)] # 14.4%
+info_tau = d2[, fit_norm(tau, sm_norm), .(group)] %>% 
+  merge(info) %>% 
+  merge(d2[, as.list(slope_mk(sm)), .(group)]) %>% 
+  mutate(label = format(date, "%Y.%m"), .after = date)
+
+info_tau[, GOF(tau, sm_peak)]
+info_tau[, GOF(tau, Rsi_toa_mean)]
+```
+
+```{r}
+p <- ggplot(info_tau, aes(Rsi_toa_mean, tau, size = n)) + 
+  geom_point() + 
+  geom_gof()
+write_fig(p, 'Rplot.pdf', 10, 5)
+```
+
+
+```{r}
+cols <- get_color(rcolors$amwg256, 12)
+
+p1 <- ggplot(d, aes(date, SM_median)) +
+  geom_line() +
+  vspan_pulse(pulse) + 
+  labs(x = NULL, y = "Daily SM median (%)")
+
+p_slope <- ggplot(info_tau, aes(sm_peak, slope, 
+    size=n, color = month(date))) + 
+  geom_point() + 
+  geom_text_repel(aes(label = label), size = 2.5) +
+  scale_color_gradientn(colors = cols) + 
+  labs(color = "Month", size = "Dry Days", x = "SM Peak", y = "Slope (% d-1)")
+
+p_tau <- ggplot(info_tau, aes(sm_peak, tau, 
+    size = n, color = month(date))) +
+  geom_point() +
+  geom_text_repel(aes(label = label), size = 2.5) +
+  scale_color_gradientn(colors = cols, limits = c(1, 12)) +
+  labs(color = "Month", size = "Dry Days", x = "SM Peak", y = "tau (Days)")
+
+p2 = p_slope + p_tau
+p <- p1 / p2
+write_fig(p, "FigureS1_slope&tau_min=5.pdf", 12, 7)
+```
+
+```{r}
+# 绘制每个drydown过程
+trans <- \(x) log(x); ylab = "log(SM)"
+trans <- \(x) x; ylab = "SM"
+
+p1 <- ggplot(d2, aes(tau, trans(sm_norm), group = factor(group))) + 
+  geom_line(aes(color = month(date)), alpha = 1) + 
+  labs(color = "Month", y = ylab) + 
+  scale_color_gradientn(colors = cols, limits = c(1, 12))
+
+p2 <- ggplot(d2, aes(tau, trans(sm_norm), group = factor(group))) +
+  geom_line(aes(color = sm_peak), alpha = 1) +
+  labs(color = "SM Peak", y = ylab) +
+  scale_color_gradientn(colors = rev(cols))
+
+p <- p1 + p2
+write_fig(p, 'FigureS1_drydown.pdf', 10, 5)
+```
