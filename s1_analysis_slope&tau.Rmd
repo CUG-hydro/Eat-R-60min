@@ -1,25 +1,8 @@
-- `ctrl+shift+l` : load_all
-- `ctrl+r`       : run 1 line
-- `ctrl+enter`   : run 1 chunk
-- `ctrl+shift+i` : insert chunk
-- `f12`          : go to definition
-
-
-```{r}
-install.packages("pacman")
-options(
-  repos = c(
-    rpkgs = "https://rpkgs.r-universe.dev", # rpkgs是kongdd的R包仓库
-    CRAN = "https://mirrors.aliyun.com/CRAN/"
-  )
-)
-```
-
 ```{r}
 ## 比较不同 ET / 补给率 计算方法的潜力
 pacman::p_load(
   Ipaper, hydroTools, gg.layers, rcolors, # 
-  data.table, dplyr, lubridate,
+  data.table, dplyr, lubridate,purrr,
   ggplot2, ggrepel,
   patchwork, scales
 )
@@ -27,7 +10,7 @@ pacman::p_load(
 devtools::load_all()
 ```
 
-```{r}
+```{r} 
 SITE <- "J1193"
 # f = sprintf("OUTPUT/%s_signal.csv", SITE)
 f = "data-raw/J1193_signal.csv"

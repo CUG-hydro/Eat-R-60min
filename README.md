@@ -18,3 +18,9 @@ scoop install R
 scoop install arf
 ```
 
+## R语言 VSCode 快捷键
+- `ctrl+shift+l` : load_all
+- `ctrl+r`       : run 1 line
+- `ctrl+enter`   : run 1 chunk
+- `ctrl+shift+i` : insert chunk
+- `f12`          : go to definition
